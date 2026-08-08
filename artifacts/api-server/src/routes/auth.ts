@@ -210,7 +210,7 @@ router.post("/auth/login", strikteLoginLimiter, async (req, res): Promise<void> 
     const [g] = await db
       .select()
       .from(gebruikersTable)
-      .where(eq(gebruikersTable.id, id));
+      .where(eq(gebruikersTable.email, String(email)));
 
     if (g?.geanonimiseerd) {
       return void res.status(403).json({ error: "Dit account is geanonimiseerd en kan niet meer worden gebruikt." });
@@ -258,14 +258,14 @@ router.post("/auth/2fa/setup", async (req, res): Promise<void> => {
     const [g] = await db
       .select()
       .from(gebruikersTable)
-      .where(eq(gebruikersTable.id, id));
+      .where(eq(gebruikersTable.id, pendingId));
     if (!g) {
       return void res.status(404).json({ error: "Gebruiker niet gevonden" });
     }
     if (g.geanonimiseerd) {
       return void res.status(403).json({ error: "Dit account is geanonimiseerd." });
     }
-    const secret = req.session.pendingSecret;
+    const secret = req.session.pendingSecret ?? authenticator.generateSecret();
     req.session.pendingSecret = secret;
     const otpauthUrl = authenticator.keyuri(g.email, ISSUER, secret);
     const qrCode = await QRCode.toDataURL(otpauthUrl);
@@ -291,7 +291,7 @@ router.post("/auth/2fa/activeren", strikteTfaLimiter, async (req, res): Promise<
     const [g] = await db
       .select()
       .from(gebruikersTable)
-      .where(eq(gebruikersTable.id, id));
+      .where(eq(gebruikersTable.id, pendingId));
     if (!g || !g.totpSecret) {
       return void res.status(401).json({ error: "Tweestapsverificatie niet ingericht" });
     }
@@ -352,7 +352,7 @@ router.post("/auth/2fa/verify", strikteTfaLimiter, async (req, res): Promise<voi
     const [g] = await db
       .select()
       .from(gebruikersTable)
-      .where(eq(gebruikersTable.id, id));
+      .where(eq(gebruikersTable.id, pendingId));
     if (!g || !g.totpSecret) {
       return void res.status(401).json({ error: "Tweestapsverificatie niet ingericht" });
     }
@@ -412,7 +412,7 @@ router.post("/auth/mobile/login", strikteLoginLimiter, async (req, res): Promise
     const [g] = await db
       .select()
       .from(gebruikersTable)
-      .where(eq(gebruikersTable.id, id));
+      .where(eq(gebruikersTable.email, String(email)));
 
     if (g?.geanonimiseerd) {
       return void res.status(403).json({ error: "Dit account is geanonimiseerd en kan niet meer worden gebruikt." });
@@ -482,7 +482,7 @@ router.post("/auth/wachtwoord-vergeten", wachtwoordVergetenLimiter, async (req, 
     const [g] = await db
       .select()
       .from(gebruikersTable)
-      .where(eq(gebruikersTable.id, id));
+      .where(eq(gebruikersTable.email, String(email)));
 
     if (!g || !g.actief) return void res.status(204).send();
 
@@ -552,10 +552,10 @@ router.post("/auth/wachtwoord-reset", wachtwoordResetLimiter, async (req, res): 
         moetWachtwoordWijzigen: false,
         tokenVersie: sql`${gebruikersTable.tokenVersie} + 1`,
       })
-      .where(eq(gebruikersTable.id, id));
+      .where(eq(gebruikersTable.id, resetToken.gebruikerId));
     // Overige sessies/mobiele tokens intrekken, behalve de sessie die net het
     // wachtwoord wijzigde — anders logt de gebruiker zichzelf meteen uit.
-    await beeindigSessiesVanGebruiker(id, req.sessionID);
+    await beeindigSessiesVanGebruiker(resetToken.gebruikerId, req.sessionID);
     res.status(204).send();
   } catch (err) {
     req.log.error(err);
